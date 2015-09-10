@@ -897,6 +897,9 @@ $.extend( ColReorder.prototype, {
 		{
 			if ( e.pageX < this.s.aoTargets[i-1].x + ((this.s.aoTargets[i].x-this.s.aoTargets[i-1].x)/2) )
 			{
+				// ----------------------------------------------------------------------------
+				this.s.init.drag_callback(i - 1)
+				// ----------------------------------------------------------------------------
 				this.dom.pointer.css( 'left', this.s.aoTargets[i-1].x );
 				this.s.mouse.toIndex = this.s.aoTargets[i-1].to;
 				bSet = true;
@@ -908,6 +911,9 @@ $.extend( ColReorder.prototype, {
 		// operator), so we put it at the end
 		if ( !bSet )
 		{
+			// ----------------------------------------------------------------------------
+			this.s.init.drag_callback(this.s.aoTargets.length)
+			// ----------------------------------------------------------------------------
 			this.dom.pointer.css( 'left', this.s.aoTargets[this.s.aoTargets.length-1].x );
 			this.s.mouse.toIndex = this.s.aoTargets[this.s.aoTargets.length-1].to;
 		}
@@ -1033,18 +1039,26 @@ $.extend( ColReorder.prototype, {
 		var origTable = origThead.parentNode;
 		var cloneCell = $(origCell).clone();
 
-		// This is a slightly odd combination of jQuery and DOM, but it is the
-		// fastest and least resource intensive way I could think of cloning
-		// the table with just a single header cell in it.
-		this.dom.drag = $(origTable.cloneNode(false))
-			.addClass( 'DTCR_clonedTable' )
-			.append(
-				$(origThead.cloneNode(false)).append(
-					$(origTr.cloneNode(false)).append(
-						cloneCell[0]
+		// ----------------------------------------------------------------------------
+		var ghost = null
+		if (this.s.init.drag_ghost)
+  			ghost = this.s.init.drag_ghost(cloneCell)
+
+		if (!ghost)
+  		ghost = $(origTable.cloneNode(false))
+  				.append(
+					$(origThead.cloneNode(false)).append(
+						$(origTr.cloneNode(false)).append(
+							cloneCell[0]
 					)
 				)
 			)
+
+		// This is a slightly odd combination of jQuery and DOM, but it is the
+		// fastest and least resource intensive way I could think of cloning
+		// the table with just a single header cell in it.
+		this.dom.drag = ghost
+			.addClass( 'DTCR_clonedTable' )
 			.css( {
 				position: 'absolute',
 				top: 0,
@@ -1054,7 +1068,7 @@ $.extend( ColReorder.prototype, {
 				zIndex: $(origCell).zIndex()
 			} )
 			.appendTo( 'body' );
-
+		// ----------------------------------------------------------------------------
 		this.dom.pointer = $('<div></div>')
 			.addClass( 'DTCR_pointer' )
 			.css( {
