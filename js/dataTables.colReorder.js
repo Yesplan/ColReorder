@@ -1,11 +1,11 @@
-/*! ColReorder 1.2.1-dev
- * ©2010-2014 SpryMedia Ltd - datatables.net/license
+/*! ColReorder 1.3.0
+ * ©2010-2015 SpryMedia Ltd - datatables.net/license
  */
 
 /**
  * @summary     ColReorder
  * @description Provide the ability to reorder columns in a DataTable
- * @version     1.2.1-dev
+ * @version     1.3.0
  * @file        dataTables.colReorder.js
  * @author      SpryMedia Ltd (www.sprymedia.co.uk)
  * @contact     www.sprymedia.co.uk/contact
@@ -20,8 +20,34 @@
  *
  * For details please refer to: http://www.datatables.net
  */
+(function( factory ){
+	if ( typeof define === 'function' && define.amd ) {
+		// AMD
+		define( ['jquery', 'datatables.net'], function ( $ ) {
+			return factory( $, window, document );
+		} );
+	}
+	else if ( typeof exports === 'object' ) {
+		// CommonJS
+		module.exports = function (root, $) {
+			if ( ! root ) {
+				root = window;
+			}
 
-(function(window, document, undefined) {
+			if ( ! $ || ! $.fn.dataTable ) {
+				$ = require('datatables.net')(root, $).$;
+			}
+
+			return factory( $, root, root.document );
+		};
+	}
+	else {
+		// Browser
+		factory( jQuery, window, document );
+	}
+}(function( $, window, document, undefined ) {
+'use strict';
+var DataTable = $.fn.dataTable;
 
 
 /**
@@ -89,10 +115,6 @@ function fnDomSwitch( nParent, iFrom, iTo )
 }
 
 
-
-var factory = function( $, DataTable ) {
-"use strict";
-
 /**
  * Plug-in for DataTables which will reorder the internal column structure by taking the column
  * from one position (iFrom) and insert it into a given point (iTo).
@@ -100,9 +122,11 @@ var factory = function( $, DataTable ) {
  *  @param   object oSettings DataTables settings object - automatically added by DataTables!
  *  @param   int iFrom Take the column to be repositioned from this point
  *  @param   int iTo and insert it into this point
+ *  @param   bool drop Indicate if the reorder is the final one (i.e. a drop)
+ *    not a live reorder
  *  @returns void
  */
-$.fn.dataTableExt.oApi.fnColReorder = function ( oSettings, iFrom, iTo )
+$.fn.dataTableExt.oApi.fnColReorder = function ( oSettings, iFrom, iTo, drop )
 {
 	var i, iLen, j, jLen, iCols=oSettings.aoColumns.length, nTrs, oCol;
 	var attrMap = function ( obj, prop, mapping ) {
@@ -318,6 +342,7 @@ $.fn.dataTableExt.oApi.fnColReorder = function ( oSettings, iFrom, iTo )
 		from: iFrom,
 		to: iTo,
 		mapping: aiInvertMapping,
+		drop: drop,
 
 		// Old style parameters for compatibility
 		iFrom: iFrom,
@@ -486,13 +511,7 @@ $.extend( ColReorder.prototype, {
 	 */
 	"fnReset": function ()
 	{
-		var a = [];
-		for ( var i=0, iLen=this.s.dt.aoColumns.length ; i<iLen ; i++ )
-		{
-			a.push( this.s.dt.aoColumns[i]._ColReorder_iOrigCol );
-		}
-
-		this._fnOrderColumns( a );
+		this._fnOrderColumns( this.fnOrder() );
 
 		return this;
 	},
@@ -544,21 +563,71 @@ $.extend( ColReorder.prototype, {
 	 *      $.fn.dataTable.ColReorder( '#example' ).fnOrder().reverse()
 	 *    );
 	 */
-	"fnOrder": function ( set )
+	"fnOrder": function ( set, original )
 	{
-		if ( set === undefined )
-		{
-			var a = [];
-			for ( var i=0, iLen=this.s.dt.aoColumns.length ; i<iLen ; i++ )
-			{
-				a.push( this.s.dt.aoColumns[i]._ColReorder_iOrigCol );
+		var a = [], i, ien, j, jen;
+		var columns = this.s.dt.aoColumns;
+
+		if ( set === undefined ){
+			for ( i=0, ien=columns.length ; i<ien ; i++ ) {
+				a.push( columns[i]._ColReorder_iOrigCol );
 			}
+
 			return a;
+		}
+
+		// The order given is based on the original indexes, rather than the
+		// existing ones, so we need to translate from the original to current
+		// before then doing the order
+		if ( original ) {
+			var order = this.fnOrder();
+
+			for ( i=0, ien=set.length ; i<ien ; i++ ) {
+				a.push( $.inArray( set[i], order ) );
+			}
+
+			set = a;
 		}
 
 		this._fnOrderColumns( fnInvertKeyValues( set ) );
 
 		return this;
+	},
+
+
+	/**
+	 * Convert from the original column index, to the original
+	 *
+	 * @param  {int|array} idx Index(es) to convert
+	 * @param  {string} dir Transpose direction - `fromOriginal` / `toCurrent`
+	 *   or `'toOriginal` / `fromCurrent`
+	 * @return {int|array}     Converted values
+	 */
+	fnTranspose: function ( idx, dir )
+	{
+		if ( ! dir ) {
+			dir = 'toCurrent';
+		}
+
+		var order = this.fnOrder();
+		var columns = this.s.dt.aoColumns;
+
+		if ( dir === 'toCurrent' ) {
+			// Given an original index, want the current
+			return ! $.isArray( idx ) ?
+				$.inArray( idx, order ) :
+				$.map( idx, function ( index ) {
+					return $.inArray( index, order );
+				} );
+		}
+		else {
+			// Given a current index, want the original
+			return ! $.isArray( idx ) ?
+				columns[idx]._ColReorder_iOrigCol :
+				$.map( idx, function ( index ) {
+					return columns[index]._ColReorder_iOrigCol;
+				} );
+		}
 	},
 
 
@@ -702,7 +771,7 @@ $.extend( ColReorder.prototype, {
 				fnArraySwitch( a, currIndex, i );
 
 				/* Do the column reorder in the table */
-				this.s.dt.oInstance.fnColReorder( currIndex, i );
+				this.s.dt.oInstance.fnColReorder( currIndex, i, true );
 
 				changed = true;
 			}
@@ -920,7 +989,7 @@ $.extend( ColReorder.prototype, {
 
 		// Perform reordering if realtime updating is on and the column has moved
 		if ( this.s.init.bRealtime && lastToIndex !== this.s.mouse.toIndex ) {
-			this.s.dt.oInstance.fnColReorder( this.s.mouse.fromIndex, this.s.mouse.toIndex );
+			this.s.dt.oInstance.fnColReorder( this.s.mouse.fromIndex, this.s.mouse.toIndex, false );
 			this.s.mouse.fromIndex = this.s.mouse.toIndex;
 			this._fnRegions();
 		}
@@ -949,7 +1018,7 @@ $.extend( ColReorder.prototype, {
 			this.dom.pointer = null;
 
 			/* Actually do the reorder */
-			this.s.dt.oInstance.fnColReorder( this.s.mouse.fromIndex, this.s.mouse.toIndex );
+			this.s.dt.oInstance.fnColReorder( this.s.mouse.fromIndex, this.s.mouse.toIndex, true );
 			this._fnSetColumnIndexes();
 
 			/* When scrolling we need to recalculate the column sizes to allow for the shift */
@@ -988,10 +1057,12 @@ $.extend( ColReorder.prototype, {
 		} );
 
 		var iToPoint = 0;
+		var total = $(aoColumns[0].nTh).offset().left; // Offset of the first column
+
 		for ( var i=0, iLen=aoColumns.length ; i<iLen ; i++ )
 		{
 			/* For the column / header in question, we want it's position to remain the same if the
-			 * position is just to it's immediate left or right, so we only incremement the counter for
+			 * position is just to it's immediate left or right, so we only increment the counter for
 			 * other columns
 			 */
 			if ( i != this.s.mouse.fromIndex )
@@ -1001,8 +1072,10 @@ $.extend( ColReorder.prototype, {
 
 			if ( aoColumns[i].bVisible )
 			{
+				total += $(aoColumns[i].nTh).outerWidth();
+
 				this.s.aoTargets.push( {
-					"x":  $(aoColumns[i].nTh).offset().left + $(aoColumns[i].nTh).outerWidth(),
+					"x":  total,
 					"to": iToPoint
 				} );
 			}
@@ -1064,8 +1137,7 @@ $.extend( ColReorder.prototype, {
 				top: 0,
 				left: 0,
 				width: $(origCell).outerWidth(),
-				height: $(origCell).outerHeight(),
-				zIndex: $(origCell).zIndex()
+				height: $(origCell).outerHeight()
 			} )
 			.appendTo( 'body' );
 		// ----------------------------------------------------------------------------
@@ -1174,7 +1246,7 @@ ColReorder.defaults = {
  *  @type      String
  *  @default   As code
  */
-ColReorder.version = "1.2.1-dev";
+ColReorder.version = "1.3.0";
 
 
 
@@ -1244,10 +1316,10 @@ $.fn.dataTable.Api.register( 'colReorder.reset()', function () {
 	} );
 } );
 
-$.fn.dataTable.Api.register( 'colReorder.order()', function ( set ) {
+$.fn.dataTable.Api.register( 'colReorder.order()', function ( set, original ) {
 	if ( set ) {
 		return this.iterator( 'table', function ( ctx ) {
-			ctx._colReorder.fnOrder( set );
+			ctx._colReorder.fnOrder( set, original );
 		} );
 	}
 
@@ -1256,23 +1328,12 @@ $.fn.dataTable.Api.register( 'colReorder.order()', function ( set ) {
 		null;
 } );
 
+$.fn.dataTable.Api.register( 'colReorder.transpose()', function ( idx, dir ) {
+	return this.context.length && this.context[0]._colReorder ?
+		this.context[0]._colReorder.fnTranspose( idx, dir ) :
+		idx;
+} );
+
 
 return ColReorder;
-}; // /factory
-
-
-// Define as an AMD module if possible
-if ( typeof define === 'function' && define.amd ) {
-	define( ['jquery', 'datatables'], factory );
-}
-else if ( typeof exports === 'object' ) {
-    // Node/CommonJS
-    factory( require('jquery'), require('datatables') );
-}
-else if ( jQuery && !jQuery.fn.dataTable.ColReorder ) {
-	// Otherwise simply initialise as normal, stopping multiple evaluation
-	factory( jQuery, jQuery.fn.dataTable );
-}
-
-
-})(window, document);
+}));
